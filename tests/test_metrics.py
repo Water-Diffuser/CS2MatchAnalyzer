@@ -112,6 +112,25 @@ def test_overshoot_counts_known_reversals():
     print(f"    reversals detected={n}")
 
 
+def test_overshoot_seen_when_the_shot_comes_after_settling():
+    """Regression guard: the overshoot window.
+
+    A fixed 150ms pre-shot window captures only the tail of the approach, so a
+    player who flicks, overshoots, corrects, settles, and only then fires
+    scores a clean zero — the exact mistake the metric exists to catch, missed
+    on any clip where the trigger pull is not immediate. Found by looking at a
+    rendered trace overlay that visibly overshot while reporting 0.
+    """
+    t = np.linspace(0, 0.6, int(0.6 * FPS))
+    yaw = min_jerk(t, 40.0, 0.12)                              # overshoot
+    yaw -= min_jerk(np.clip(t - 0.12, 0, None), 10.0, 0.08)    # correct back
+    yaw += min_jerk(np.clip(t - 0.20, 0, None), 3.0, 0.06)     # settle
+    trace = make_trace(yaw)                                     # then hold, then fire
+    n = overshoot_count(trace, shot_idx=len(yaw) - 1)
+    assert n >= 2, f"overshoot before a delayed shot went uncounted (got {n})"
+    print(f"    flick, correct, settle, THEN fire -> {n} reversals counted")
+
+
 def test_overshoot_zero_on_direct_flick():
     t = np.linspace(0, 0.15, int(0.15 * FPS))
     n = overshoot_count(make_trace(min_jerk(t, 40.0, 0.15)), shot_idx=int(0.15 * FPS) - 1)

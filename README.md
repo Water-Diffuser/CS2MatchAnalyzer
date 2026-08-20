@@ -32,10 +32,11 @@ Two consequences follow:
 | 4 · Motion trace + mechanical metrics | built, tested |
 | 5 · Coachability ranking and clip selection | built, tested |
 | 6/9 · Packaging and schema-valid records | built, tested |
+| 10 · Trace overlay rendering | built |
 | 7/8 · AI engine — provider adapters, keychain, budget guard | reference implementation |
 | 1/10 · Tauri shell, ingest UI, dashboard | not started |
 
-72 tests pass in ~1 minute. The pipeline runs end to end on a video file
+73 tests pass in ~1 minute. The pipeline runs end to end on a video file
 today; what it does not yet have is a UI.
 
 ## Measured accuracy
@@ -84,6 +85,7 @@ python reference/analyze_clip.py match.mp4 412300 --provider google --budget 0.1
 | [`analyzer/motion.py`](analyzer/motion.py) | Camera motion from pixels: masked optical flow + RANSAC |
 | [`analyzer/events.py`](analyzer/events.py) | Ammo/hitmarker/kill-feed detection, whiff derivation |
 | [`analyzer/pipeline.py`](analyzer/pipeline.py) | Stages 1–6 and 9, plus the CLI |
+| [`analyzer/overlay.py`](analyzer/overlay.py) | Crosshair-trace overlay and yaw-vs-time sparkline |
 | [`analyzer/synthetic.py`](analyzer/synthetic.py) | Ground-truth footage generator (test infrastructure) |
 | [`profiles/`](profiles/) | Per-game ROIs and FOV, as data |
 | [`schemas/clip_analysis.v1.schema.json`](schemas/clip_analysis.v1.schema.json) | Canonical record for one analyzed engagement |

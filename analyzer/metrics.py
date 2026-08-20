@@ -144,18 +144,62 @@ def jitter_ratio(speed: Sequence[float], fps: float,
     return float(np.clip(np.trapezoid(psd[mask], freqs[mask]) / total, 0.0, 1.0))
 
 
-def overshoot_count(trace: Trace, shot_idx: int, *, window_ms: float = 150.0) -> int:
+def overshoot_count(trace: Trace, shot_idx: int, *, max_window_ms: float = 600.0,
+                    quiet_dps: float = 20.0) -> int:
     """Corrective direction reversals in the approach to a shot.
 
     The classic high-sensitivity failure: the flick passes the target, comes
     back, passes it again. Counted as sign changes in the yaw velocity, which
     is where overshoot actually shows up — vertical correction is usually
     recoil, not aim error.
+
+    The window runs from the movement's onset — the last moment the crosshair
+    was at rest before the shot — rather than over a fixed interval. A fixed
+    150ms window captures only the tail of the approach, so a player who
+    flicks, overshoots by 11 degrees, corrects, settles, and only then fires
+    scores a clean zero. That is the exact mistake this metric exists to
+    catch, and it is invisible on any clip where the trigger pull is not
+    immediate.
     """
     if shot_idx <= 0 or shot_idx >= len(trace.t_ms):
         return 0
+
     t_end = trace.t_ms[shot_idx]
-    window = (trace.t_ms >= t_end - window_ms) & (trace.t_ms <= t_end)
+    speed = trace.speed_dps
+
+    def in_budget(i: int) -> bool:
+        return i > 0 and t_end - trace.t_ms[i] < max_window_ms
+
+    quiet = speed < quiet_dps
+    # Rest means *sustained* quiet, not one slow sample. Velocity passes
+    # through zero at every direction reversal, so a single-sample test treats
+    # the overshoot itself as the start of the movement and clips the window to
+    # just after the mistake — reporting zero reversals on a trace that
+    # visibly has two.
+    # 150ms, because the pause that matters is the one separating engagements,
+    # not the one between submovements. Corrective submovements are themselves
+    # separated by genuine 20-50ms lulls, so a short threshold finds "rest" in
+    # the middle of the correction sequence and clips the window to the last
+    # submovement — again reporting zero on a trace with two clear reversals.
+    quiet_run = max(2, int(0.150 * trace.fps))
+
+    # Step back over the settled tail first. A well-executed shot is fired once
+    # the crosshair has stopped, so at shot_idx the speed is usually already
+    # quiet; walking back only while moving would stop immediately and leave an
+    # empty window.
+    i = shot_idx
+    while in_budget(i) and quiet[i]:
+        i -= 1
+
+    # Then back through the movement to the last sustained rest before it.
+    run = 0
+    while in_budget(i):
+        run = run + 1 if quiet[i] else 0
+        if run >= quiet_run:
+            break
+        i -= 1
+
+    window = (trace.t_ms >= trace.t_ms[i]) & (trace.t_ms <= t_end)
     yaw = trace.yaw_deg[window]
     if yaw.size < 3:
         return 0
