@@ -61,7 +61,9 @@ exe = EXE(
     name='gameplay-analyzer',
     debug=False,
     bootloader_ignore_signals=False,
-    strip=False,
+    strip=True,         # measured: ~1 MB off an 82 MB bundle, not the 25% often
+                        # claimed. OpenCV ships stripped already, so there is
+                        # little left to remove. Kept because it costs nothing.
     upx=False,          # UPX-packed binaries are a common false positive for AV
     upx_exclude=[],
     runtime_tmpdir=None,

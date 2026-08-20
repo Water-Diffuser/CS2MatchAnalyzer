@@ -98,8 +98,10 @@ pyinstaller gameplay-analyzer.spec --noconfirm
 it was built on, which is the entire reason the CI matrix exists — it is the
 only way to produce a Windows executable from this repo.
 
-The bundle is ~82 MB, almost all of it OpenCV and NumPy. Two decisions keep it
-from being far worse:
+The bundle is ~80 MB, almost all of it OpenCV and NumPy. That is close to the
+floor: PyInstaller already zlib-compresses the embedded archive, so shipping it
+as a `.gz` or `.xz` saves under 1 MB, and stripping symbols saves about the same
+because OpenCV ships stripped. Two decisions keep it from being far worse:
 
 - **SciPy is not a runtime dependency.** The one function used from it,
   `signal.welch`, is reimplemented in [`analyzer/psd.py`](analyzer/psd.py) and
