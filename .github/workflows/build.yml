@@ -1,0 +1,110 @@
+name: build
+
+# PyInstaller cannot cross-compile: a binary is produced by, and for, the OS it
+# was built on. The matrix exists for that reason rather than for thoroughness —
+# it is the only way to produce the Windows executable most players need.
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - name: Run test suite
+        run: python tests/run_all.py
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04      # oldest supported runner: glibc symbols are
+            target: linux-x86_64  # forward-compatible, never backward, so
+            binary: gameplay-analyzer          # building on newer breaks older distros
+          - os: windows-latest
+            target: windows-x86_64
+            binary: gameplay-analyzer.exe
+          - os: macos-13
+            target: macos-x86_64
+            binary: gameplay-analyzer
+          - os: macos-14
+            target: macos-arm64
+            binary: gameplay-analyzer
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - run: pip install -r requirements-dev.txt
+
+      - name: Build
+        run: pyinstaller gameplay-analyzer.spec --noconfirm --log-level WARN
+
+      # A binary that builds is not a binary that runs. `selftest` renders
+      # footage along a known angular path and checks the bundled OpenCV
+      # recovers it, which catches the failures that only appear once frozen:
+      # missing hidden imports, unresolvable data files, a broken entry point.
+      - name: Verify the binary runs
+        shell: bash
+        run: |
+          cd dist
+          ./${{ matrix.binary }} --version
+          ./${{ matrix.binary }} doctor
+          ./${{ matrix.binary }} profiles
+          ./${{ matrix.binary }} selftest
+
+      - name: Verify bundled resources resolved from the bundle, not the checkout
+        shell: bash
+        run: |
+          mkdir -p "${{ runner.temp }}/isolated"
+          cp "dist/${{ matrix.binary }}" "${{ runner.temp }}/isolated/"
+          cd "${{ runner.temp }}/isolated"
+          ./${{ matrix.binary }} profiles | grep -q valorant
+          ./${{ matrix.binary }} doctor | grep -q "frozen *True"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gameplay-analyzer-${{ matrix.target }}
+          path: dist/${{ matrix.binary }}
+          retention-days: 30
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Name each binary for its platform
+        run: |
+          mkdir -p release
+          for dir in artifacts/*/; do
+            target=$(basename "$dir" | sed 's/^gameplay-analyzer-//')
+            src=$(find "$dir" -type f | head -1)
+            ext=""
+            [[ "$src" == *.exe ]] && ext=".exe"
+            cp "$src" "release/gameplay-analyzer-${target}${ext}"
+          done
+          ls -lh release/
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          generate_release_notes: true

@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-MODULES = ["test_schema.py", "test_metrics.py", "test_motion.py", "test_events.py", "test_pipeline.py"]
+MODULES = ["test_schema.py", "test_metrics.py", "test_motion.py", "test_events.py", "test_pipeline.py", "test_psd.py"]
 
 if __name__ == "__main__":
     failed = []

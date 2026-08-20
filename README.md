@@ -33,10 +33,11 @@ Two consequences follow:
 | 5 · Coachability ranking and clip selection | built, tested |
 | 6/9 · Packaging and schema-valid records | built, tested |
 | 10 · Trace overlay rendering | built |
+| Packaging · standalone binary, CI matrix | built, tested frozen |
 | 7/8 · AI engine — provider adapters, keychain, budget guard | reference implementation |
 | 1/10 · Tauri shell, ingest UI, dashboard | not started |
 
-73 tests pass in ~1 minute. The pipeline runs end to end on a video file
+78 tests pass in ~1 minute. The pipeline runs end to end on a video file
 today; what it does not yet have is a UI.
 
 ## Measured accuracy
@@ -63,14 +64,56 @@ footage the full reaction-time loop — target spawn detected, shot detected,
 interval measured — returns 216.7 ± 16.7 ms against a ground truth of
 216.7 ms.
 
-## Quick start
+## Download
+
+Standalone executables — no Python, no install, no account — are built for
+Linux, Windows, and both macOS architectures by
+[`.github/workflows/build.yml`](.github/workflows/build.yml). Grab one from the
+latest run's artifacts, or from a release if the commit is tagged.
+
+```
+gameplay-analyzer selftest                   # verify the build works on your machine
+gameplay-analyzer analyze match.mp4 --profile valorant --max-clips 8
+gameplay-analyzer overlay match.mp4 --start-ms 412300 --out flick.png
+gameplay-analyzer doctor                     # versions and bundled resources
+```
+
+`selftest` is worth running first: it renders footage along a known 45° flick
+and checks the bundled OpenCV recovers it to within a tolerance, which answers
+"is this download working" without needing a recording to hand.
+
+On macOS the binary is unsigned, so Gatekeeper will block the first run —
+`xattr -d com.apple.quarantine gameplay-analyzer`, or right-click → Open.
+Signing needs a paid Apple Developer account.
+
+## Building from source
 
 ```bash
-pip install -r requirements.txt
-python tests/run_all.py                      # ~2 min: renders video and checks CV accuracy
+pip install -r requirements-dev.txt
+python tests/run_all.py                      # ~1 min: renders video, checks CV accuracy
+pyinstaller gameplay-analyzer.spec --noconfirm
+```
 
-# Local tier — no API key needed, no network, no cost
-python -m analyzer.pipeline match.mp4 --profile valorant --max-clips 8
+**PyInstaller cannot cross-compile.** A binary is produced by, and for, the OS
+it was built on, which is the entire reason the CI matrix exists — it is the
+only way to produce a Windows executable from this repo.
+
+The bundle is ~82 MB, almost all of it OpenCV and NumPy. Two decisions keep it
+from being far worse:
+
+- **SciPy is not a runtime dependency.** The one function used from it,
+  `signal.welch`, is reimplemented in [`analyzer/psd.py`](analyzer/psd.py) and
+  verified against SciPy to within 1e-16 in
+  [`tests/test_psd.py`](tests/test_psd.py). That is ~112 MB — more than the rest
+  of the application put together — for one function.
+- **`opencv-python-headless`, not `opencv-python`.** The GUI build pulls in
+  GTK/Qt system libraries that are absent on a clean machine, turning a working
+  binary into an import error at startup.
+
+Running from source works too, without building anything:
+
+```bash
+python -m analyzer analyze match.mp4 --profile valorant
 
 # AI tier — needs a key in the OS keychain
 python reference/analyze_clip.py match.mp4 412300 --provider google --budget 0.10
@@ -84,7 +127,10 @@ python reference/analyze_clip.py match.mp4 412300 --provider google --budget 0.1
 | [`analyzer/metrics.py`](analyzer/metrics.py) | SPARC smoothness, jitter, overshoot, reaction time, path efficiency |
 | [`analyzer/motion.py`](analyzer/motion.py) | Camera motion from pixels: masked optical flow + RANSAC |
 | [`analyzer/events.py`](analyzer/events.py) | Ammo/hitmarker/kill-feed detection, whiff derivation |
-| [`analyzer/pipeline.py`](analyzer/pipeline.py) | Stages 1–6 and 9, plus the CLI |
+| [`analyzer/pipeline.py`](analyzer/pipeline.py) | Stages 1–6 and 9 |
+| [`analyzer/cli.py`](analyzer/cli.py) | `analyze`, `overlay`, `profiles`, `doctor`, `selftest` |
+| [`analyzer/psd.py`](analyzer/psd.py) | Welch PSD in NumPy, so SciPy stays out of the bundle |
+| [`gameplay-analyzer.spec`](gameplay-analyzer.spec) | PyInstaller build spec |
 | [`analyzer/overlay.py`](analyzer/overlay.py) | Crosshair-trace overlay and yaw-vs-time sparkline |
 | [`analyzer/synthetic.py`](analyzer/synthetic.py) | Ground-truth footage generator (test infrastructure) |
 | [`profiles/`](profiles/) | Per-game ROIs and FOV, as data |
