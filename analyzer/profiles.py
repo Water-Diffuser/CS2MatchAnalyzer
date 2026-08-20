@@ -11,7 +11,7 @@ from pathlib import Path
 
 import yaml
 
-PROFILE_DIR = Path(__file__).resolve().parents[1] / "profiles"
+from .resources import profile_dir
 
 Roi = tuple[float, float, float, float]
 
@@ -31,9 +31,9 @@ class GameProfile:
     def load(cls, name_or_path: str) -> "GameProfile":
         path = Path(name_or_path)
         if not path.exists():
-            path = PROFILE_DIR / f"{name_or_path}.yaml"
+            path = profile_dir() / f"{name_or_path}.yaml"
         if not path.exists():
-            available = sorted(p.stem for p in PROFILE_DIR.glob("*.yaml"))
+            available = sorted(p.stem for p in profile_dir().glob("*.yaml"))
             raise FileNotFoundError(f"no profile {name_or_path!r}; have {available}")
 
         raw = yaml.safe_load(path.read_text())
@@ -57,4 +57,4 @@ class GameProfile:
 
     @staticmethod
     def available() -> list[str]:
-        return sorted(p.stem for p in PROFILE_DIR.glob("*.yaml"))
+        return sorted(p.stem for p in profile_dir().glob("*.yaml"))

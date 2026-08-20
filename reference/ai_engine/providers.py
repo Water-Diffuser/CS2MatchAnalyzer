@@ -30,7 +30,11 @@ from .keystore import load_key
 
 PROMPT_VERSION = "clip_v1"
 SCHEMA_VERSION = "clip_analysis/v1"
-SCHEMA_PATH = Path(__file__).resolve().parents[2] / "schemas" / "clip_analysis.v1.schema.json"
+try:
+    from analyzer.resources import schema_path
+    SCHEMA_PATH = schema_path()
+except ImportError:      # standalone use of the reference implementation
+    SCHEMA_PATH = Path(__file__).resolve().parents[2] / "schemas" / "clip_analysis.v1.schema.json"
 
 # Model choice is configuration. Per-clip work goes to the cheap tier because
 # cost here is dominated by image tokens; the single session-synthesis call

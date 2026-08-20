@@ -1,18 +1,9 @@
-# CV sidecar
-opencv-python-headless>=4.10
-numpy>=1.26
-scipy>=1.13            # PSD / SPARC smoothness metrics
-av>=12.0               # PyAV: real PTS timestamps, VFR-safe decode
-pytesseract>=0.3.13    # kill feed / ammo counter OCR
-Pillow>=10.0
-
-# AI engine (all optional — install only the providers you use)
-google-genai>=1.0
-openai>=1.50
-anthropic>=0.40
-
-# Key storage
-keyring>=25.0
-
-# Contract tests
-jsonschema>=4.23
+# Runtime dependencies. Deliberately short: every one of these ships inside the
+# binary, so each addition is a download the user pays for.
+#
+# opencv-python-headless, not opencv-python: this is a CLI, and the GUI build
+# drags in GTK/Qt system libraries that are absent on a clean machine and turn
+# a working binary into an import error at startup.
+numpy>=1.24
+opencv-python-headless>=4.8
+PyYAML>=6.0

@@ -1,0 +1,11 @@
+-r requirements.txt
+
+# Build and test only — none of these are imported by the shipped package.
+#
+# SciPy is here purely so tests/test_psd.py can verify analyzer/psd.py against
+# scipy.signal.welch. Keeping it out of requirements.txt is what removes ~112 MB
+# from the bundle; the spec file also excludes it explicitly in case a
+# transitive dependency reintroduces it.
+scipy>=1.10
+jsonschema>=4.0
+pyinstaller>=6.0

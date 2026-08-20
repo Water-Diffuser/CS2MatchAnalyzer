@@ -16,7 +16,7 @@ from dataclasses import dataclass, asdict
 from typing import Sequence
 
 import numpy as np
-from scipy import signal
+from .psd import welch
 
 # Voluntary human aim adjustment lives below ~5 Hz. Energy above this band is
 # tremor, mouse sensor noise, or grip tension — mechanically distinct from
@@ -133,7 +133,7 @@ def jitter_ratio(speed: Sequence[float], fps: float,
         return float("nan")
 
     nperseg = min(v.size, 256)
-    freqs, psd = signal.welch(v - v.mean(), fs=fps, nperseg=nperseg)
+    freqs, psd = welch(v - v.mean(), fs=fps, nperseg=nperseg)
     total = np.trapezoid(psd, freqs)
     if total <= 0:
         return 0.0

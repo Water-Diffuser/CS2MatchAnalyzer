@@ -1,7 +1,7 @@
 __pycache__/
-*.pyc
-.env
-*.db
-*.db-wal
-*.db-shm
-analysis.db
+*.py[cod]
+build/
+dist/
+*.egg-info/
+.venv/
+venv/
