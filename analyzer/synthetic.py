@@ -97,6 +97,13 @@ def render_clip(yaw_path_deg: np.ndarray, pitch_path_deg: np.ndarray, *,
     focal = (width / 2.0) / math.tan(math.radians(h_fov_deg) / 2.0)
     rng = np.random.default_rng(seed)
 
+    # Grain, drawn once and sampled per frame rather than regenerated.
+    # Generating a full frame of Gaussian noise per frame costs ~2.7M draws and
+    # dominated the whole test suite's runtime; cropping a larger precomputed
+    # field gives per-frame variation for a fraction of the cost.
+    noise_field = (rng.normal(0, noise_sigma, (height + 64, width + 64, 3))
+                   if noise_sigma > 0 else None)
+
     # Anchor the viewport centrally so the full path stays inside the world.
     base_x = (ww - width) // 2
     base_y = (wh - height) // 2
@@ -124,9 +131,11 @@ def render_clip(yaw_path_deg: np.ndarray, pitch_path_deg: np.ndarray, *,
             _draw_hud(frame)
         _draw_crosshair(frame)
 
-        if noise_sigma > 0:  # sensor / compression grain
+        if noise_field is not None:  # sensor / compression grain
+            ox, oy = int(rng.integers(0, 64)), int(rng.integers(0, 64))
             frame = np.clip(frame.astype(np.int16) +
-                            rng.normal(0, noise_sigma, frame.shape), 0, 255).astype(np.uint8)
+                            noise_field[oy:oy + height, ox:ox + width],
+                            0, 255).astype(np.uint8)
         frames.append(frame)
 
     return frames

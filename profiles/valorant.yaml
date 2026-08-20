@@ -1,0 +1,20 @@
+# Tactical-shooter profile. HUD geometry changes with patches, which is
+# precisely why these live in data: a restyle is a YAML edit, not a release.
+game: valorant
+fov_degrees: 103.0
+shot_signal: ammo_decrement
+
+rois:
+  kill_feed: [0.62, 0.06, 0.38, 0.22]
+  ammo:      [0.86, 0.88, 0.11, 0.08]
+  health:    [0.04, 0.88, 0.14, 0.07]
+  crosshair: [0.46, 0.44, 0.08, 0.12]
+  minimap:   [0.02, 0.02, 0.20, 0.28]
+
+flow_exclude:
+  - [0.62, 0.06, 0.38, 0.22]
+  - [0.86, 0.88, 0.11, 0.08]
+  - [0.04, 0.88, 0.14, 0.07]
+  - [0.02, 0.02, 0.20, 0.28]   # minimap scrolls independently of the world
+
+kill_feed_rows: 5
