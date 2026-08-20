@@ -16,6 +16,7 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -38,13 +39,25 @@ jobs:
           - os: windows-latest
             target: windows-x86_64
             binary: gameplay-analyzer.exe
-          - os: macos-13
-            target: macos-x86_64
-            binary: gameplay-analyzer
           - os: macos-14
             target: macos-arm64
             binary: gameplay-analyzer
+          # No Intel Mac target. GitHub has retired the macos-13 label, and a
+          # job requesting it is never assigned a runner — it sits queued until
+          # it times out, which also blocks `release` through `needs: build`.
+          # Observed directly: run 32332922917 had that job queued with
+          # runner_id 0 for 30+ minutes while every other platform finished in
+          # under two.
+          #
+          # A universal2 build from the arm64 runner is the usual workaround,
+          # but it needs universal2 wheels for every binary dependency and
+          # OpenCV does not publish them reliably. Intel Macs cannot run the
+          # arm64 binary, so those users build from source — see the README.
+          # For an FPS aim tool the affected audience is very small.
     runs-on: ${{ matrix.os }}
+    # A runner that is never assigned would otherwise hold the job for GitHub's
+    # 6-hour default, blocking the release job behind it.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

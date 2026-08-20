@@ -67,9 +67,14 @@ interval measured — returns 216.7 ± 16.7 ms against a ground truth of
 ## Download
 
 Standalone executables — no Python, no install, no account — are built for
-Linux, Windows, and both macOS architectures by
+Windows, Linux, and Apple Silicon by
 [`.github/workflows/build.yml`](.github/workflows/build.yml). Grab one from the
 latest run's artifacts, or from a release if the commit is tagged.
+
+**Intel Macs build from source** (see below). GitHub has retired the `macos-13`
+runner label, so there is no hosted Intel builder left, and a universal2 build
+would need universal2 wheels for every binary dependency — which OpenCV does not
+publish reliably.
 
 ```
 gameplay-analyzer selftest                   # verify the build works on your machine
