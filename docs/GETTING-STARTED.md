@@ -14,11 +14,17 @@ Everything happens on your own PC. Nothing is uploaded anywhere.
 3. Scroll to the bottom, to a box called **Artifacts**.
 4. Click **gameplay-analyzer-windows-x86_64**. A `.zip` downloads.
 
-## 2. Unzip it
+## 2. Unzip it — this step is not optional
 
 Right-click the downloaded `.zip` → **Extract All** → **Extract**.
 
-You get a folder with two files:
+> **Do not double-click the launcher while it is still inside the zip.**
+> Windows will happily open it from there, but it copies out only that one
+> file and leaves the program behind, so the launcher starts up and then
+> reports that it cannot find `gameplay-analyzer.exe`. It detects this case
+> and tells you, but extracting first avoids it entirely.
+
+After extracting you get a folder with two files:
 
 | File | What it is |
 |---|---|
