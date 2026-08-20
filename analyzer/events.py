@@ -12,6 +12,7 @@ or have go wrong.
 """
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass
 from typing import Iterable, Sequence
 
@@ -23,6 +24,28 @@ import numpy as np
 # within this Hamming distance to survive antialiasing and compression noise.
 PHASH_MATCH_DISTANCE = 6
 HITMARKER_THRESHOLD = 0.80
+
+# A real kill-feed row holds still for seconds. World content behind a
+# semi-transparent feed changes every frame as the camera moves. Requiring a
+# hash to repeat across consecutive frames is what separates the two, and
+# without it the tracker fires on every frame of any non-flat background.
+KILL_ROW_PERSISTENCE_FRAMES = 4
+
+# Rows expire from the feed after a few seconds, so remembering more than this
+# buys nothing and makes every lookup linear in the length of the match.
+SEEN_HISTORY = 64
+
+# A feed ROI is sized to bound where rows *can* appear, so most of it is
+# usually empty — showing whatever the world is doing behind a semi-transparent
+# panel. Hashing those slices treats every camera movement as a fresh kill:
+# on a 20s recording that produced 560 events against 5 real engagements, and
+# collapsed the entire match into one candidate.
+#
+# Kill feeds render on a solid or heavily darkened band, so a genuine row has a
+# dominant background colour while world content does not. Measured on rendered
+# footage: feed rows sit at 0.91, world content at 0.28-0.60. The threshold is
+# a profile parameter because how opaque a feed's backing is varies by title.
+FEED_ROW_UNIFORMITY = 0.70
 
 
 def phash(image: np.ndarray, hash_size: int = 8) -> int:
@@ -255,11 +278,32 @@ class KillFeedTracker:
     """
 
     def __init__(self, roi: tuple[float, float, float, float], rows: int = 5,
-                 match_distance: int = PHASH_MATCH_DISTANCE):
+                 match_distance: int = PHASH_MATCH_DISTANCE,
+                 persistence_frames: int = KILL_ROW_PERSISTENCE_FRAMES,
+                 uniformity_threshold: float = FEED_ROW_UNIFORMITY):
         self.roi = roi
         self.rows = rows
         self.match_distance = match_distance
-        self._seen: list[int] = []
+        self.persistence_frames = persistence_frames
+        self.uniformity_threshold = uniformity_threshold
+        self._seen: deque[int] = deque(maxlen=SEEN_HISTORY)
+        # Per row slot: the hash currently being observed, the frame it first
+        # appeared on, and how many consecutive frames it has held.
+        self._pending: dict[int, tuple[int, int, int]] = {}
+
+    @staticmethod
+    def background_uniformity(row: np.ndarray) -> float:
+        """Fraction of pixels sitting near the row's modal intensity.
+
+        High for a panel with text drawn on it, low for natural scenery. This
+        is what tells a real feed row from the world showing through an empty
+        slot — persistence alone cannot, because a player holding an angle
+        produces a genuinely static world for seconds at a time.
+        """
+        gray = cv2.cvtColor(row, cv2.COLOR_BGR2GRAY) if row.ndim == 3 else row
+        hist = np.bincount(gray.ravel(), minlength=256)
+        mode = int(hist.argmax())
+        return float(hist[max(0, mode - 12):mode + 13].sum()) / gray.size
 
     def _row_hashes(self, frame: np.ndarray) -> list[int]:
         feed = crop_roi(frame, self.roi)
@@ -274,6 +318,9 @@ class KillFeedTracker:
             # "row" that fires once and then blocks a real kill hashing near it.
             if gray.std() < 6.0:
                 continue
+            # Scenery behind an empty slot: not a row, whatever it hashes to.
+            if self.background_uniformity(row) < self.uniformity_threshold:
+                continue
             out.append(phash(row))
         return out
 
@@ -281,11 +328,33 @@ class KillFeedTracker:
         return all(hamming(h, prev) > self.match_distance for prev in self._seen)
 
     def update(self, frame_idx: int, frame: np.ndarray) -> list[GameEvent]:
+        """Emit a kill only once a row has held still long enough to be one.
+
+        A hash is confirmed after `persistence_frames` consecutive sightings,
+        but the event is timestamped to the frame it *first* appeared on —
+        that first-appearance frame is the frame-accurate kill time the
+        reaction-time metric depends on, so the confirmation delay must not
+        leak into it.
+        """
         events = []
-        for h in self._row_hashes(frame):
-            if self._is_new(h):
+        current = self._row_hashes(frame)
+
+        for slot, h in enumerate(current):
+            prev = self._pending.get(slot)
+            if prev is not None and hamming(h, prev[0]) <= self.match_distance:
+                first_frame, count = prev[1], prev[2] + 1
+            else:
+                first_frame, count = frame_idx, 1
+            self._pending[slot] = (h, first_frame, count)
+
+            if count == self.persistence_frames and self._is_new(h):
                 self._seen.append(h)
-                events.append(GameEvent(frame_idx, "kill", 0.9, f"feed row {h:016x}"))
+                events.append(GameEvent(first_frame, "kill", 0.9, f"feed row {h:016x}"))
+
+        # Drop state for slots that vanished, so a returning row is treated as
+        # new rather than resuming a stale count.
+        for slot in [k for k in self._pending if k >= len(current)]:
+            del self._pending[slot]
         return events
 
     def run(self, frames: Sequence[np.ndarray]) -> list[GameEvent]:

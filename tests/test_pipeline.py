@@ -34,30 +34,54 @@ FPS = 60.0
 WORLD = make_world()
 
 
-def synth_match(n_engagements: int = 3, frames_per: int = 240) -> list[np.ndarray]:
-    """A recording containing several engagements, each a flick then shots.
+# Pipeline tests exercise composition, not sub-degree accuracy — that is
+# test_motion.py's job at full resolution. Rendering these fixtures at 640x360
+# cuts the suite's runtime by roughly 4x with no loss of coverage here.
+FIXTURE_W, FIXTURE_H = 640, 360
+_MATCH_CACHE: dict[tuple[int, int], list[np.ndarray]] = {}
 
-    Engagements are spaced several seconds apart, as they are in a real match,
-    so extracted clip windows do not all overlap. The ammo counter decrements
-    across the whole recording, so shot detection reads real pixels rather than
-    being handed events directly.
+
+def _draw_ammo(frame: np.ndarray, value: int) -> None:
+    """Draw the ammo counter into the profile's declared ROI, at any size."""
+    h, w = frame.shape[:2]
+    x0, y0 = int(w * 0.86), int(h * 0.88)
+    x1, y1 = x0 + int(w * 0.11), y0 + int(h * 0.08)
+    cv2.rectangle(frame, (x0, y0), (x1, y1), (18, 18, 18), -1)
+    scale = (y1 - y0) / 32.0
+    cv2.putText(frame, str(value), (x0 + int(5 * scale), y1 - int((y1 - y0) * 0.22)),
+                cv2.FONT_HERSHEY_SIMPLEX, scale, (235, 235, 235),
+                max(1, int(round(scale * 2))), cv2.LINE_AA)
+
+
+def synth_match(n_engagements: int = 3, frames_per: int = 190) -> list[np.ndarray]:
+    """A recording of several engagements, each a flick then a burst.
+
+    Engagements are spaced seconds apart, as in a real match, so the extracted
+    clip windows do not all overlap. The ammo counter decrements across the
+    whole recording, so shot detection reads real pixels rather than being
+    handed events directly.
+
+    Memoized: several tests want the same recording, and re-rendering it each
+    time dominated the suite's runtime.
     """
-    clf_font = cv2.FONT_HERSHEY_SIMPLEX
+    key = (n_engagements, frames_per)
+    if key in _MATCH_CACHE:
+        return _MATCH_CACHE[key]
+
     frames: list[np.ndarray] = []
     ammo = 30
+    burst_at = frames_per // 2
     for e in range(n_engagements):
         path = flick_path(frames_per, FPS, 20.0 + e * 9, 0.16, overshoot_deg=4.0 + e * 2)
-        clip = render_clip(path, np.zeros_like(path), world=WORLD,
-                           h_fov_deg=103.0, distractor=False, hud=False)
+        clip = render_clip(path, np.zeros_like(path), world=WORLD, h_fov_deg=103.0,
+                           width=FIXTURE_W, height=FIXTURE_H, distractor=False, hud=False)
         for i, frame in enumerate(clip):
-            if 120 <= i < 124:            # a short burst mid-engagement
+            if burst_at <= i < burst_at + 4:
                 ammo = max(0, ammo - 1)
-            x0, y0 = int(1280 * 0.86), int(720 * 0.88)
-            cv2.rectangle(frame, (x0, y0), (x0 + int(1280 * .11), y0 + int(720 * .08)),
-                          (18, 18, 18), -1)
-            cv2.putText(frame, str(ammo), (x0 + 8, y0 + 40), clf_font, 0.9,
-                        (235, 235, 235), 2, cv2.LINE_AA)
+            _draw_ammo(frame, ammo)
             frames.append(frame)
+
+    _MATCH_CACHE[key] = frames
     return frames
 
 
@@ -141,7 +165,7 @@ def test_scores_reward_deviation_in_either_direction():
 
 def test_pipeline_finds_engagements_in_rendered_footage():
     frames = synth_match(n_engagements=3)
-    profile = GameProfile.load("aimlabs")
+    profile = GameProfile.load("valorant")
     cands = find_candidates(frames, FPS, profile)
     assert len(cands) >= 3, f"expected >=3 engagements, found {len(cands)}"
     for c in cands:
@@ -155,9 +179,10 @@ def test_pipeline_finds_engagements_in_rendered_footage():
 def test_pipeline_output_validates_against_the_schema():
     """The contract between CV, storage, and the dashboard."""
     frames = synth_match(n_engagements=3)
-    profile = GameProfile.load("aimlabs")
+    profile = GameProfile.load("valorant")
     cands = find_candidates(frames, FPS, profile)
-    records = [build_record(c, "session-1", "synth.mp4", profile.game, FPS, "1280x720")
+    records = [build_record(c, "session-1", "synth.mp4", profile.game, FPS,
+                            f"{FIXTURE_W}x{FIXTURE_H}")
                for c in cands]
     assert records
     for rec in records:
@@ -176,8 +201,8 @@ def test_back_to_back_engagements_do_not_produce_identical_clips():
     another. Windows must slide, and any that genuinely coincide must collapse
     into one clip rather than being analyzed and billed twice.
     """
-    frames = synth_match(n_engagements=3, frames_per=90)   # bursts ~1.5s apart
-    cands = find_candidates(frames, FPS, GameProfile.load("aimlabs"))
+    frames = synth_match(n_engagements=3, frames_per=95)   # bursts ~1.6s apart
+    cands = find_candidates(frames, FPS, GameProfile.load("valorant"))
     hashes = [c.content_sha256 for c in cands]
     assert len(hashes) == len(set(hashes)), \
         f"{len(hashes)} clips collapsed to {len(set(hashes))} distinct hashes"
@@ -187,11 +212,100 @@ def test_back_to_back_engagements_do_not_produce_identical_clips():
           f"distinct clips at {spans}")
 
 
+def _trainer_clip(spawn: int = 40, shot: int = 53, n: int = 150) -> list[np.ndarray]:
+    """Aim-trainer footage with a target spawning and a shot at known frames."""
+    frames, ammo = [], 30
+    for i in range(n):
+        f = np.full((360, 640, 3), 35, np.uint8)
+        cv2.rectangle(f, (60, 40), (580, 320), (48, 44, 40), 2)
+        for x in range(80, 600, 60):
+            cv2.line(f, (x, 45), (x, 315), (52, 48, 44), 1)
+        if i >= spawn:
+            cv2.circle(f, (420, 150), 22, (60, 60, 230), -1)
+        if shot <= i < shot + 2:
+            ammo = max(0, ammo - 1)
+        _draw_ammo(f, ammo)
+        frames.append(f)
+    return frames
+
+
+def test_reaction_time_measured_against_a_real_stimulus():
+    """The full loop: target spawn detected, shot detected, interval measured.
+
+    Aim trainers are the one place this tier can localize a stimulus onset
+    reliably, which is exactly why the build order puts them first.
+    """
+    spawn, shot = 40, 53
+    cands = find_candidates(_trainer_clip(spawn, shot), FPS, GameProfile.load("aimlabs"))
+    assert cands, "no engagement found in trainer footage"
+    m = cands[0].metrics
+    expected = (shot - spawn) * 1000.0 / FPS
+    assert m.reaction_time_ms is not None, "stimulus was detectable but no reaction time"
+    assert abs(m.reaction_time_ms - expected) <= m.reaction_time_error_ms, \
+        f"measured {m.reaction_time_ms:.1f}ms against ground truth {expected:.1f}ms"
+    print(f"    ground truth {expected:.1f}ms -> measured "
+          f"{m.reaction_time_ms:.1f}±{m.reaction_time_error_ms:.1f}ms")
+
+
+def test_stimulus_must_precede_the_shot():
+    """Regression guard: a clip window routinely spans more than one target.
+
+    Taking the earliest spawn in the window picks up the next target appearing
+    *after* the trigger pull, producing a negative interval — which the metrics
+    layer rejects outright, crashing the run.
+    """
+    # Target spawns at 40, shot at 53, then a second target spawns at 70.
+    frames = _trainer_clip(spawn=40, shot=53, n=150)
+    for i in range(70, 150):
+        cv2.circle(frames[i], (180, 250), 22, (60, 60, 230), -1)
+
+    cands = find_candidates(frames, FPS, GameProfile.load("aimlabs"))
+    assert cands, "no engagement found"
+    m = cands[0].metrics
+    assert m.reaction_time_ms is not None and m.reaction_time_ms > 0, \
+        f"reaction time {m.reaction_time_ms} measured against a later stimulus"
+    print(f"    two targets in one window -> {m.reaction_time_ms:.1f}ms "
+          f"(measured from the earlier spawn, not the later one)")
+
+
+def test_reaction_time_is_null_without_a_stimulus_detector():
+    """Integrity guard.
+
+    Falling back to the clip's own start frame re-reports the window offset as
+    a reaction time: a constant that looks entirely plausible on a dashboard,
+    reported identically for every clip in a match. The AI layer is told to
+    treat `measured` as ground truth, so a fabricated value there is the worst
+    failure this system can produce.
+    """
+    frames = synth_match(n_engagements=2)
+    cands = find_candidates(frames, FPS, GameProfile.load("valorant"))
+    with_shots = [c for c in cands if c.metrics.shots_fired > 0]
+    assert with_shots, "fixture produced no shots"
+    for c in with_shots:
+        assert c.metrics.reaction_time_ms is None, \
+            f"invented a reaction time of {c.metrics.reaction_time_ms}ms with no stimulus"
+        assert any("no stimulus onset" in w for w in c.metrics.cv_warnings), \
+            "null reaction time with no explanation of why"
+    print(f"    {len(with_shots)} clips with shots, all reaction_time=None with a warning")
+
+
+def test_no_whiff_claimed_without_hit_detection():
+    """A shot is only a whiff if something could have registered a hit."""
+    frames = synth_match(n_engagements=2)
+    cands = find_candidates(frames, FPS, GameProfile.load("valorant"))
+    for c in cands:
+        assert c.event_type not in ("whiff", "whiff_then_death"), \
+            f"claimed {c.event_type} with no hitmarker template configured"
+        if c.metrics.shots_fired:
+            assert any("hit detection not configured" in w for w in c.metrics.cv_warnings)
+    print(f"    {len(cands)} clips labelled without inventing a hit outcome")
+
+
 def test_records_are_json_serializable_without_nan():
     frames = synth_match(n_engagements=2)
-    profile = GameProfile.load("aimlabs")
+    profile = GameProfile.load("valorant")
     cands = find_candidates(frames, FPS, profile)
-    text = json.dumps([build_record(c, "s", "f.mp4", "aimlabs", FPS, "1280x720")
+    text = json.dumps([build_record(c, "s", "f.mp4", "valorant", FPS, f"{FIXTURE_W}x{FIXTURE_H}")
                        for c in cands])
     assert "NaN" not in text and "Infinity" not in text
     json.loads(text)
@@ -201,8 +315,9 @@ def test_skipped_assessment_is_well_formed_not_absent():
     """With no API key the AI block must still be present and schema-valid, so
     no consumer has to branch on its absence."""
     frames = synth_match(n_engagements=1)
-    cands = find_candidates(frames, FPS, GameProfile.load("aimlabs"))
-    rec = build_record(cands[0], "s", "f.mp4", "aimlabs", FPS, "1280x720")
+    cands = find_candidates(frames, FPS, GameProfile.load("valorant"))
+    rec = build_record(cands[0], "s", "f.mp4", "valorant", FPS,
+                       f"{FIXTURE_W}x{FIXTURE_H}")
     assert rec["assessed"]["ai_status"] == "skipped"
     assert rec["assessed"]["evidence"] == []
     assert rec["assessed"]["not_determinable"]
@@ -214,7 +329,7 @@ def test_content_hash_is_stable_and_content_addressed():
     """The AI cache keys on this: identical pixels must hash identically, and
     different footage must not collide, or re-analysis silently costs money."""
     frames = synth_match(n_engagements=2)
-    profile = GameProfile.load("aimlabs")
+    profile = GameProfile.load("valorant")
     a = find_candidates(frames, FPS, profile)
     b = find_candidates(frames, FPS, profile)
     assert a[0].content_sha256 == b[0].content_sha256, "hash not reproducible"
@@ -230,7 +345,7 @@ def test_cli_runs_on_a_real_file():
         out = Path(tmp) / "out.json"
         result = subprocess.run(
             [sys.executable, "-m", "analyzer.pipeline", video,
-             "--profile", "aimlabs", "--max-clips", "4", "--out", str(out)],
+             "--profile", "valorant", "--max-clips", "4", "--out", str(out)],
             cwd=ROOT, capture_output=True, text=True,
         )
         assert result.returncode == 0, f"CLI failed:\n{result.stderr}"

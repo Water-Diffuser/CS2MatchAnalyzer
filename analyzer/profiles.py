@@ -24,6 +24,7 @@ class GameProfile:
     flow_exclude: list[Roi] = field(default_factory=list)
     shot_signal: str = "ammo_decrement"
     kill_feed_rows: int = 5
+    feed_row_uniformity: float = 0.70
     target_hsv: dict[str, list[int]] | None = None
 
     @classmethod
@@ -50,6 +51,7 @@ class GameProfile:
             flow_exclude=[tuple(r) for r in raw.get("flow_exclude", [])],
             shot_signal=raw.get("shot_signal", "ammo_decrement"),
             kill_feed_rows=int(raw.get("kill_feed_rows", 5)),
+            feed_row_uniformity=float(raw.get("feed_row_uniformity", 0.70)),
             target_hsv=raw.get("target_hsv"),
         )
 

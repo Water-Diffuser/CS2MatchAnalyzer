@@ -23,7 +23,7 @@ import numpy as np
 
 from .events import (
     DigitClassifier, GameEvent, KillFeedTracker, derive_events, detect_hitmarkers,
-    detect_shots_from_ammo,
+    detect_shots_from_ammo, detect_targets_hsv,
 )
 from .metrics import ClipMetrics, Trace, analyze
 from .motion import trace_from_frames
@@ -39,6 +39,10 @@ CLIP_DURATION_MS = 3000
 # Shots further apart than this belong to different engagements. Roughly the
 # gap between bursts in a fast game; well above a spray's inter-shot interval.
 ENGAGEMENT_GAP_MS = 800
+
+# Frames a target must remain on screen before its appearance counts as a
+# spawn. A real target appears and stays; a colour-key hit on scenery does not.
+TARGET_PERSISTENCE_FRAMES = 6
 
 
 @dataclass
@@ -209,14 +213,47 @@ def find_candidates(frames: list[np.ndarray], fps: float, profile: GameProfile,
         shots = detect_shots_from_ammo(frames, profile.rois["ammo"], classifier)
 
     hits: list[GameEvent] = []
-    if hitmarker is not None and "crosshair" in profile.rois:
+    hit_detection = hitmarker is not None and "crosshair" in profile.rois
+    if hit_detection:
         hits = detect_hitmarkers(frames, hitmarker, profile.rois["crosshair"])
+
+    spawns: list[GameEvent] = []
+    if profile.target_hsv:
+        # Trainer targets are the one stimulus this tier can localize
+        # reliably, which is what makes reaction time measurable there.
+        #
+        # A raw count-increase is not enough. Colour-keying arbitrary footage
+        # picks up anything in the hue range — scenery, decals, a teammate's
+        # outline — and a detector that fires on those emits a spawn on most
+        # frames, which then merges every engagement in a match into one
+        # group. A real target appears and then stays put, so a count must
+        # hold before it counts as a spawn.
+        counts = [
+            len(detect_targets_hsv(f, tuple(profile.target_hsv["lower"]),
+                                   tuple(profile.target_hsv["upper"])))
+            for f in frames
+        ]
+        confirmed = 0
+        for i in range(len(counts) - TARGET_PERSISTENCE_FRAMES):
+            window = counts[i:i + TARGET_PERSISTENCE_FRAMES]
+            if window[0] > confirmed and all(c >= window[0] for c in window):
+                spawns.append(GameEvent(i, "target_spawn", 0.9, f"{window[0]} on screen"))
+                confirmed = window[0]
+            elif counts[i] < confirmed:
+                confirmed = counts[i]        # a target was cleared
+
+        if len(spawns) > len(frames) // TARGET_PERSISTENCE_FRAMES // 2:
+            # Still implausibly many: the hue range is matching scenery rather
+            # than targets. Withhold the signal instead of feeding the
+            # reaction-time metric noise it will present as measurement.
+            spawns = []
 
     kills: list[GameEvent] = []
     if "kill_feed" in profile.rois:
-        kills = KillFeedTracker(profile.rois["kill_feed"], profile.kill_feed_rows).run(frames)
+        kills = KillFeedTracker(profile.rois["kill_feed"], profile.kill_feed_rows,
+                                uniformity_threshold=profile.feed_row_uniformity).run(frames)
 
-    all_events = derive_events(shots, hits) + kills
+    all_events = derive_events(shots, hits) + kills + spawns
     if not all_events:
         return []
 
@@ -275,17 +312,50 @@ def find_candidates(frames: list[np.ndarray], fps: float, profile: GameProfile,
         local_shots = [e.frame - lo for e in group if e.type == "shot" and lo <= e.frame < hi]
         n_hits = sum(1 for e in group if e.type == "hit")
         types = {e.type for e in group}
-        event_type = ("whiff_then_death" if "whiff" in types and "death" in types
-                      else "kill" if "kill" in types
-                      else "whiff" if "whiff" in types
-                      else "clean_rep")
+
+        # Reaction time needs a real stimulus onset. Using the clip's own start
+        # would just re-report the window offset — a constant dressed up as a
+        # measurement, and one that looks entirely plausible on a dashboard.
+        # Only a detected target spawn counts; without one the metric is null
+        # and says why.
+        # The stimulus must be the one that prompted the shot: the most recent
+        # spawn *before* it. Taking the earliest spawn in the window picks up
+        # the next target appearing after the trigger pull, which yields a
+        # negative interval — and a clip window routinely spans more than one
+        # target in a trainer.
+        spawns = [e.frame - lo for e in group if e.type == "target_spawn" and lo <= e.frame < hi]
+        prior = [sp for sp in spawns if local_shots and sp <= local_shots[0]]
+        stimulus = max(prior) if prior else None
+
+        # Whether an outcome is knowable at all depends on hit detection being
+        # configured. Calling a shot a whiff when nothing could have registered
+        # a hit invents a finding; the honest label is that a burst happened
+        # and its outcome was not observed.
+        if not hit_detection:
+            event_type = "kill" if "kill" in types else "tracking_phase"
+        else:
+            event_type = ("whiff_then_death" if "whiff" in types and "death" in types
+                          else "kill" if "kill" in types
+                          else "whiff" if "whiff" in types
+                          else "clean_rep")
 
         metrics = analyze(
             trace,
-            stimulus_frame=0 if local_shots else None,
+            stimulus_frame=stimulus,
             shot_frames=local_shots,
             hits=n_hits,
         )
+
+        extra: list[str] = []
+        if local_shots and stimulus is None:
+            extra.append("reaction_time unavailable: no stimulus onset detected "
+                         "(needs target-spawn detection or an enemy detector)")
+        if not hit_detection and local_shots:
+            extra.append("hit detection not configured: shots_hit is not a "
+                         "measurement and whiffs cannot be derived")
+        if extra:
+            metrics = type(metrics)(**{**metrics.__dict__,
+                                       "cv_warnings": metrics.cv_warnings + tuple(extra)})
         candidates.append(Candidate(
             start_ms=int(lo * 1000 / fps),
             end_ms=int(hi * 1000 / fps),

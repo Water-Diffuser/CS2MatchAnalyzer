@@ -209,6 +209,57 @@ def test_empty_feed_emits_nothing():
     assert KillFeedTracker(FEED_ROI).run(frames) == []
 
 
+def test_no_false_kills_over_moving_scenery():
+    """Regression guard: the failure that only appeared on real footage.
+
+    A feed ROI is sized to bound where rows *can* appear, so most of it is
+    normally empty and shows whatever the world is doing behind it. Hashing
+    those slices made every camera movement a fresh kill — 560 events across a
+    20s recording containing 5 engagements, which collapsed the whole match
+    into a single candidate.
+
+    The unit tests missed it because they used a flat background, where the
+    variance guard suppressed the slices. This one pans real texture.
+    """
+    from analyzer.synthetic import make_world, render_clip
+
+    world = make_world()
+    frames = render_clip(np.linspace(0, 22, 90), np.zeros(90), world=world,
+                         width=W, height=H, distractor=False, hud=False)
+    kills = KillFeedTracker(FEED_ROI).run(frames)
+    assert kills == [], f"{len(kills)} phantom kills from panning scenery"
+    print(f"    90 frames of panning scenery -> {len(kills)} kills")
+
+
+def test_no_false_kills_when_camera_holds_still():
+    """Persistence alone cannot solve this: a player holding an angle produces
+    a genuinely static world for seconds, which a stability test would accept
+    as a kill-feed row."""
+    from analyzer.synthetic import make_world, render_clip
+
+    world = make_world()
+    frames = render_clip(np.zeros(90), np.zeros(90), world=world,
+                         width=W, height=H, distractor=False, hud=False)
+    kills = KillFeedTracker(FEED_ROI).run(frames)
+    assert kills == [], f"{len(kills)} phantom kills from a static camera"
+    print(f"    90 frames of a held angle -> {len(kills)} kills")
+
+
+def test_uniformity_separates_feed_rows_from_scenery():
+    """The discriminator, measured directly."""
+    from analyzer.synthetic import make_world, render_clip
+
+    feed_row = crop_roi(draw_feed(blank(), ["player_a  [AK]  player_b"]), FEED_ROI)[:30]
+    scenery = crop_roi(render_clip(np.zeros(1), np.zeros(1), world=make_world(),
+                                   width=W, height=H, distractor=False, hud=False)[0],
+                       FEED_ROI)[:30]
+    u_feed = KillFeedTracker.background_uniformity(feed_row)
+    u_scene = KillFeedTracker.background_uniformity(scenery)
+    assert u_feed > 0.70 > u_scene, f"feed {u_feed:.3f} vs scenery {u_scene:.3f}"
+    print(f"    feed row {u_feed:.3f} vs scenery {u_scene:.3f} "
+          f"(threshold 0.70)")
+
+
 # ── targets ──────────────────────────────────────────────────────────────────
 
 def test_hsv_target_detection_finds_known_spheres():

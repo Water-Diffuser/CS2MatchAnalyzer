@@ -18,3 +18,8 @@ flow_exclude:
   - [0.02, 0.02, 0.20, 0.28]   # minimap scrolls independently of the world
 
 kill_feed_rows: 5
+
+# Minimum fraction of a row's pixels near its modal intensity for it to count
+# as a feed row rather than scenery showing through an empty slot. Raise it for
+# a title with a more opaque feed backing, lower it for a more transparent one.
+feed_row_uniformity: 0.70

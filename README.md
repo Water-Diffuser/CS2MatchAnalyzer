@@ -35,7 +35,7 @@ Two consequences follow:
 | 7/8 · AI engine — provider adapters, keychain, budget guard | reference implementation |
 | 1/10 · Tauri shell, ingest UI, dashboard | not started |
 
-65 tests pass in ~2 minutes. The pipeline runs end to end on a video file
+72 tests pass in ~1 minute. The pipeline runs end to end on a video file
 today; what it does not yet have is a UI.
 
 ## Measured accuracy
@@ -57,7 +57,10 @@ recovered trace against it. At 1280×720, 103° FOV, 60 fps:
 | untrackable footage (smoke, flash) | confidence 0.00, no invented motion |
 
 Ammo-counter reading is exact across 0–100. Kill-feed dedup collapses 120
-frames of one row into one event timed at first appearance.
+frames of one row into one event timed at first appearance. On aim-trainer
+footage the full reaction-time loop — target spawn detected, shot detected,
+interval measured — returns 216.7 ± 16.7 ms against a ground truth of
+216.7 ms.
 
 ## Quick start
 
@@ -125,3 +128,16 @@ unambiguously safe; anything else risks a user's account.
 - **Metric thresholds are uncalibrated.** SPARC and jitter bands come from
   motor-control literature. They need validating against known-skill players
   before any number is shown to a user as a verdict.
+- **Reaction time needs a stimulus detector, which only trainers have.** On
+  tactical-shooter footage there is no reliable way yet to localize the moment
+  an enemy became visible, so `reaction_time_ms` is `null` with a warning
+  rather than a plausible-looking constant. Real support needs an enemy
+  detector — a fine-tuned YOLOv8n would do it — which is the obvious next
+  piece of work.
+- **Whiffs need a hitmarker template, which ships per game.** Without one the
+  pipeline reports `tracking_phase` rather than claiming a whiff it cannot
+  observe.
+- **Kill-feed detection is the least robust component.** It relies on feed rows
+  having a dominant background colour (measured: 0.91 for a feed row, 0.28–0.60
+  for scenery). Titles with a fully transparent feed will need a different
+  discriminator, and the threshold is per-profile for that reason.
