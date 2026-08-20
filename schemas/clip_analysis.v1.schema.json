@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Water-Diffuser/CS2MatchAnalyzer/schemas/clip_analysis.v1.schema.json",
+  "title": "ClipAnalysis",
+  "description": "One analyzed engagement. `measured` is written only by the local CV pipeline; `assessed` is written only by the AI model. Authored to the intersection of Gemini response_schema, OpenAI strict json_schema, and Anthropic tool input_schema: every property is required, additionalProperties is false everywhere, optionality is expressed as a nullable type union, and there is no top-level oneOf.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "clip_id", "session_id", "source", "event", "measured", "assessed", "provenance"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "clip_analysis/v1" },
+    "clip_id":    { "type": "string", "description": "UUIDv4 for this clip." },
+    "session_id": { "type": "string", "description": "UUIDv4 grouping all clips from one source recording." },
+
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "game", "start_ms", "end_ms", "fps", "resolution", "content_sha256"],
+      "properties": {
+        "file":       { "type": "string" },
+        "game":       { "type": "string", "enum": ["valorant", "cs2", "overwatch", "aimlabs", "kovaaks", "other"] },
+        "start_ms":   { "type": "integer", "minimum": 0, "description": "Clip start offset within the source recording." },
+        "end_ms":     { "type": "integer", "minimum": 0 },
+        "fps":        { "type": "number", "exclusiveMinimum": 0 },
+        "resolution": { "type": "string", "pattern": "^[0-9]+x[0-9]+$" },
+        "content_sha256": { "type": "string", "description": "Hash of the trimmed clip bytes. Participates in the AI response cache key." }
+      }
+    },
+
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "weapon", "detection_confidence", "detected_by"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["kill", "death", "whiff", "whiff_then_death", "trade", "multikill", "tracking_phase", "target_switch", "clean_rep"]
+        },
+        "weapon": { "type": ["string", "null"] },
+        "detection_confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "detected_by": {
+          "type": "array",
+          "description": "Which CV detectors fired. Lets you audit an event back to its evidence.",
+          "items": {
+            "type": "string",
+            "enum": ["kill_feed_ocr", "ammo_decrement", "hitmarker_template", "muzzle_flash", "hp_delta", "score_counter", "blob_target", "manual"]
+          }
+        }
+      }
+    },
+
+    "measured": {
+      "type": "object",
+      "description": "Deterministic output of the local CV pipeline. GROUND TRUTH. The AI model is instructed never to recompute or contradict these.",
+      "additionalProperties": false,
+      "required": [
+        "reaction_time_ms", "reaction_time_error_ms", "time_to_first_shot_ms",
+        "shots_fired", "shots_hit", "headshot_pct",
+        "smoothness_sparc", "jitter_ratio", "jitter_band_hz",
+        "overshoot_count", "peak_angular_error_deg",
+        "crosshair_placement_error_deg", "crosshair_placement_method",
+        "target_switch_ms", "path_efficiency", "trace", "cv_confidence", "cv_warnings"
+      ],
+      "properties": {
+        "reaction_time_ms": { "type": ["number", "null"], "description": "Stimulus onset to first shot. Null when no stimulus onset could be localized." },
+        "reaction_time_error_ms": { "type": ["number", "null"], "description": "Half-frame-interval uncertainty, e.g. 16.7 at 60fps. Always render alongside the value." },
+        "time_to_first_shot_ms": { "type": ["number", "null"] },
+        "shots_fired": { "type": "integer", "minimum": 0 },
+        "shots_hit":   { "type": "integer", "minimum": 0 },
+        "headshot_pct":{ "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "smoothness_sparc": { "type": ["number", "null"], "description": "Spectral arc length of the angular velocity profile. Less negative is smoother. Amplitude- and duration-normalized, so flicks and tracks are comparable." },
+        "jitter_ratio": { "type": ["number", "null"], "minimum": 0, "maximum": 1, "description": "Fraction of velocity PSD energy above jitter_band_hz[0]. Voluntary aim is under ~5 Hz; energy above 8 Hz is tremor, grip tension, or sensor noise." },
+        "jitter_band_hz": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 },
+        "overshoot_count": { "type": "integer", "minimum": 0, "description": "Velocity sign changes in the 150 ms preceding the shot." },
+        "peak_angular_error_deg": { "type": ["number", "null"] },
+        "crosshair_placement_error_deg": { "type": ["number", "null"] },
+        "crosshair_placement_method": {
+          "type": "string",
+          "enum": ["horizon_proxy_2d", "head_box_2d", "depth_corrected", "unavailable"],
+          "description": "Recorded so rows produced by different pipeline versions stay comparable in trend charts."
+        },
+        "target_switch_ms": { "type": ["number", "null"], "description": "Kill A to crosshair settled on target B, where settled = |omega| < 15 deg/s for 3 consecutive frames." },
+        "path_efficiency": { "type": ["number", "null"], "minimum": 0, "maximum": 1, "description": "Ideal angular distance divided by actual path length. 1.0 is a perfect direct flick." },
+        "trace": {
+          "type": "object",
+          "description": "Parallel arrays, not an array of objects: ~4x smaller on disk and feeds uPlot without a transform. All four arrays share a length.",
+          "additionalProperties": false,
+          "required": ["t_ms", "yaw_deg", "pitch_deg", "speed_dps"],
+          "properties": {
+            "t_ms":      { "type": "array", "items": { "type": "number" } },
+            "yaw_deg":   { "type": "array", "items": { "type": "number" } },
+            "pitch_deg": { "type": "array", "items": { "type": "number" } },
+            "speed_dps": { "type": "array", "items": { "type": "number" } }
+          }
+        },
+        "cv_confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "cv_warnings": { "type": "array", "items": { "type": "string" }, "description": "Human-readable caveats surfaced in the UI, e.g. low fps limiting reaction-time resolution." }
+      }
+    },
+
+    "assessed": {
+      "type": "object",
+      "description": "Written only by the AI model. This is the object passed as the response schema / tool input_schema to the provider.",
+      "additionalProperties": false,
+      "required": ["ai_status", "primary_weakness", "severity", "confidence", "summary", "evidence", "drill", "not_determinable"],
+      "properties": {
+        "ai_status": { "type": "string", "enum": ["ok", "failed", "skipped", "cached"] },
+        "primary_weakness": {
+          "type": ["string", "null"],
+          "enum": ["overaiming", "undershooting", "jitter", "slow_reaction", "poor_crosshair_placement", "slow_target_switch", "spray_control", "counter_strafe", "tracking_drift", "none", null],
+          "description": "Single highest-leverage correction. A closed enum, not free text, so it can be aggregated across a session."
+        },
+        "severity":   { "type": ["integer", "null"], "minimum": 1, "maximum": 5 },
+        "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1, "description": "The model's own confidence given the visual evidence. Low values should co-occur with entries in not_determinable." },
+        "summary":    { "type": ["string", "null"], "maxLength": 400, "description": "Two sentences maximum, each citing a tile timestamp." },
+        "evidence": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["t_rel_s", "observation"],
+            "properties": {
+              "t_rel_s":     { "type": "number", "description": "Seconds from clip start, matching a timestamp burned into a frame-grid tile." },
+              "observation": { "type": "string", "maxLength": 200 }
+            }
+          }
+        },
+        "drill": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["name", "target", "rationale"],
+          "properties": {
+            "name":      { "type": "string", "description": "A real, named, repeatable exercise." },
+            "target":    { "type": "string", "description": "Must contain a concrete number: sets, minutes, or a metric threshold." },
+            "rationale": { "type": "string", "maxLength": 300, "description": "Ties the drill to this clip's specific measured failure." }
+          }
+        },
+        "not_determinable": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Things the frames could not settle. Giving the model a legitimate place to say 'I could not tell' measurably reduces confabulation."
+        }
+      }
+    },
+
+    "provenance": {
+      "type": "object",
+      "description": "Cost, model, and rubric version. prompt_version participates in the cache key so improving a prompt invalidates stale analyses instead of mixing two rubrics in one dashboard.",
+      "additionalProperties": false,
+      "required": ["cv_version", "prompt_version", "provider", "model", "input_tokens", "output_tokens", "estimated_cost_usd", "cached", "analyzed_at"],
+      "properties": {
+        "cv_version":     { "type": "string" },
+        "prompt_version": { "type": "string" },
+        "provider":       { "type": ["string", "null"], "enum": ["google", "openai", "anthropic", "local", null] },
+        "model":          { "type": ["string", "null"] },
+        "input_tokens":   { "type": ["integer", "null"], "minimum": 0 },
+        "output_tokens":  { "type": ["integer", "null"], "minimum": 0 },
+        "estimated_cost_usd": { "type": ["number", "null"], "minimum": 0 },
+        "cached":         { "type": "boolean" },
+        "analyzed_at":    { "type": "string", "description": "RFC3339 UTC." }
+      }
+    }
+  }
+}
