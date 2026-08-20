@@ -1,0 +1,11 @@
+{
+  "_comment": "USD per 1,000,000 tokens. Populate from each vendor's current pricing page at build time and ship as a refreshable data file — prices change and differ by tier, so they must never be hard-coded into a binary. Values of 0 make a missing/stale table visible in the pre-flight dialog instead of silently reporting everything as free.",
+  "_schema": {"input": "USD per 1M input tokens", "output": "USD per 1M output tokens"},
+
+  "gemini-2.0-flash":          { "input": 0.0, "output": 0.0 },
+  "gemini-2.5-pro":            { "input": 0.0, "output": 0.0 },
+  "gpt-4o-mini":               { "input": 0.0, "output": 0.0 },
+  "gpt-4o":                    { "input": 0.0, "output": 0.0 },
+  "claude-haiku-4-5-20251001": { "input": 0.0, "output": 0.0 },
+  "claude-sonnet-5":           { "input": 0.0, "output": 0.0 }
+}

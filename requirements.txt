@@ -1,0 +1,18 @@
+# CV sidecar
+opencv-python-headless>=4.10
+numpy>=1.26
+scipy>=1.13            # PSD / SPARC smoothness metrics
+av>=12.0               # PyAV: real PTS timestamps, VFR-safe decode
+pytesseract>=0.3.13    # kill feed / ammo counter OCR
+Pillow>=10.0
+
+# AI engine (all optional — install only the providers you use)
+google-genai>=1.0
+openai>=1.50
+anthropic>=0.40
+
+# Key storage
+keyring>=25.0
+
+# Contract tests
+jsonschema>=4.23
