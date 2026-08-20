@@ -61,9 +61,19 @@ exe = EXE(
     name='gameplay-analyzer',
     debug=False,
     bootloader_ignore_signals=False,
-    strip=True,         # measured: ~1 MB off an 82 MB bundle, not the 25% often
-                        # claimed. OpenCV ships stripped already, so there is
-                        # little left to remove. Kept because it costs nothing.
+    strip=False,        # Do not enable. It saves ~1 MB on an 82 MB bundle and
+                        # corrupts the binary: PyInstaller runs `strip` over the
+                        # bundled shared libraries, which broke NumPy's vendored
+                        # OpenBLAS with "ELF load command address/offset not
+                        # page-aligned" on Linux and "LoadLibrary: Invalid access
+                        # to memory location" on Windows. Both failed at startup,
+                        # before any application code ran.
+                        #
+                        # It passed on this developer's machine and on macOS,
+                        # which is what makes it dangerous: whether `strip`
+                        # damages a given .so depends on the local binutils
+                        # version and how the library was linked. CI on three
+                        # platforms is what caught it (run 32333479295).
     upx=False,          # UPX-packed binaries are a common false positive for AV
     upx_exclude=[],
     runtime_tmpdir=None,
