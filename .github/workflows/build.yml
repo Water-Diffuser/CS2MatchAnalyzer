@@ -92,7 +92,24 @@ jobs:
           ./${{ matrix.binary }} profiles | grep -q valorant
           ./${{ matrix.binary }} doctor | grep -q "frozen *True"
 
-      - uses: actions/upload-artifact@v4
+      # Windows ships with the drag-and-drop launcher beside the exe. The
+      # launcher looks for the exe in its own folder, so the two must travel
+      # together or it fails with a message about exactly that.
+      - name: Bundle the Windows launcher
+        if: runner.os == 'Windows'
+        run: copy "launchers\Analyze Video.bat" dist\
+
+      - if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: gameplay-analyzer-${{ matrix.target }}
+          path: |
+            dist/${{ matrix.binary }}
+            dist/Analyze Video.bat
+          retention-days: 30
+
+      - if: runner.os != 'Windows'
+        uses: actions/upload-artifact@v4
         with:
           name: gameplay-analyzer-${{ matrix.target }}
           path: dist/${{ matrix.binary }}

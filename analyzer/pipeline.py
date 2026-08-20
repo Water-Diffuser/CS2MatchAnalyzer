@@ -370,8 +370,16 @@ def find_candidates(frames: list[np.ndarray], fps: float, profile: GameProfile,
 
 
 def analyze_video(path: str, profile: GameProfile, *, max_clips: int = DEFAULT_CLIP_COUNT,
-                  hitmarker: np.ndarray | None = None) -> list[dict]:
-    """Full local pipeline for one recording."""
+                  hitmarker: np.ndarray | None = None,
+                  overlay_dir: str | Path | None = None) -> list[dict]:
+    """Full local pipeline for one recording.
+
+    With `overlay_dir` set, also writes a trace image per selected clip. The
+    trace and frames are already in memory at that point, so the pictures cost
+    almost nothing extra — and for most people a picture of where their
+    crosshair actually went is the readable half of the output. A table of
+    SPARC values is not what someone opens the tool to see.
+    """
     cap = cv2.VideoCapture(path)
     if not cap.isOpened():
         raise RuntimeError(f"could not open {path}")
@@ -394,11 +402,27 @@ def analyze_video(path: str, profile: GameProfile, *, max_clips: int = DEFAULT_C
     candidates = find_candidates(frames, fps, profile, hitmarker=hitmarker)
     selected = select_clips(candidates, max_clips)
 
-    return [
+    ordered = sorted(selected, key=lambda i: candidates[i].start_ms)
+    records = [
         build_record(candidates[i], session_id, Path(path).name,
                      profile.game, fps, f"{w}x{h}")
-        for i in sorted(selected, key=lambda i: candidates[i].start_ms)
+        for i in ordered
     ]
+
+    if overlay_dir is not None:
+        from .overlay import draw_trace
+
+        out_dir = Path(overlay_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        for n, i in enumerate(ordered, start=1):
+            c = candidates[i]
+            image = draw_trace(c.frames[-1], c.trace, profile.fov_degrees,
+                               metrics=c.metrics)
+            name = f"{n:02d}_{c.start_ms // 1000}s_{c.event_type}.png"
+            cv2.imwrite(str(out_dir / name), image)
+            records[n - 1]["overlay_image"] = name
+
+    return records
 
 
 def main(argv: list[str] | None = None) -> int:

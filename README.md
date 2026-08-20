@@ -66,6 +66,10 @@ interval measured — returns 216.7 ± 16.7 ms against a ground truth of
 
 ## Download
 
+**Not technical? → [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md)** walks
+through it click by click, and Windows ships with a drag-and-drop launcher so
+there is no terminal involved.
+
 Standalone executables — no Python, no install, no account — are built for
 Windows, Linux, and Apple Silicon by
 [`.github/workflows/build.yml`](.github/workflows/build.yml). Grab one from the

@@ -36,7 +36,8 @@ def cmd_analyze(args: argparse.Namespace) -> int:
     if not args.quiet:
         print(f"analyzing {video.name} with profile {profile.game}…", file=sys.stderr)
     try:
-        records = analyze_video(str(video), profile, max_clips=args.max_clips)
+        records = analyze_video(str(video), profile, max_clips=args.max_clips,
+                                overlay_dir=args.overlay_dir)
     except RuntimeError as exc:
         return _err(str(exc))
 
@@ -66,6 +67,10 @@ def _summarize(records: list[dict]) -> None:
         window = f"{s['start_ms']}-{s['end_ms']}"
         print(f"{window:<16}{e['type']:<17}{m['shots_fired']:<7}"
               f"{rt:<17}{sparc:<8}{m['overshoot_count']:<6}{eff}", file=sys.stderr)
+
+    if any("overlay_image" in r for r in records):
+        print(f"\n{len(records)} trace images written alongside the results.",
+              file=sys.stderr)
 
     warnings = {w for r in records for w in r["measured"]["cv_warnings"]}
     if warnings:
@@ -186,6 +191,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-clips", type=int, default=8,
                    help="how many engagements to keep (default: 8)")
     p.add_argument("--out", default="-", help="output JSON path, or - for stdout")
+    p.add_argument("--overlay-dir", default=None, metavar="DIR",
+                   help="also write a crosshair-trace image per clip into DIR")
     p.add_argument("--quiet", action="store_true", help="suppress the summary table")
     p.set_defaults(func=cmd_analyze)
 
