@@ -1,0 +1,23 @@
+# Aim-trainer profile. Trainers come first in the build order because their
+# targets are deliberately high-contrast and their score counter is
+# unambiguous — near-ground-truth conditions in which to prove the metric
+# maths before attempting the genuinely hard kill-feed CV.
+game: aimlabs
+fov_degrees: 103.0
+shot_signal: ammo_decrement
+
+# Normalized (x, y, w, h) so one profile works at every recorded resolution.
+rois:
+  ammo:      [0.86, 0.88, 0.11, 0.08]
+  crosshair: [0.44, 0.42, 0.12, 0.16]
+  score:     [0.44, 0.02, 0.12, 0.06]
+
+# Excluded from optical flow: static HUD anchors the estimate to zero, and the
+# centre is where the thing being shot at moves on its own.
+flow_exclude:
+  - [0.86, 0.88, 0.11, 0.08]
+  - [0.44, 0.02, 0.12, 0.06]
+
+target_hsv:
+  lower: [0, 120, 90]
+  upper: [10, 255, 255]
