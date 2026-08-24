@@ -37,7 +37,7 @@ Two consequences follow:
 | 7/8 · AI engine — provider adapters, keychain, budget guard | reference implementation |
 | 1/10 · Tauri shell, ingest UI, dashboard | not started |
 
-78 tests pass in ~1 minute. The pipeline runs end to end on a video file
+87 tests pass in ~1 minute. The pipeline runs end to end on a video file
 today; what it does not yet have is a UI.
 
 ## Measured accuracy
@@ -67,8 +67,8 @@ interval measured — returns 216.7 ± 16.7 ms against a ground truth of
 ## Download
 
 **Not technical? → [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md)** walks
-through it click by click, and Windows ships with a drag-and-drop launcher so
-there is no terminal involved.
+through it click by click. The download is a single file you drag a video onto
+— no terminal, no install.
 
 Standalone executables — no Python, no install, no account — are built for
 Windows, Linux, and Apple Silicon by
@@ -142,6 +142,7 @@ python reference/analyze_clip.py match.mp4 412300 --provider google --budget 0.1
 | [`analyzer/events.py`](analyzer/events.py) | Ammo/hitmarker/kill-feed detection, whiff derivation |
 | [`analyzer/pipeline.py`](analyzer/pipeline.py) | Stages 1–6 and 9 |
 | [`analyzer/cli.py`](analyzer/cli.py) | `analyze`, `overlay`, `profiles`, `doctor`, `selftest` |
+| [`analyzer/desktop.py`](analyzer/desktop.py) | Drag-and-drop and double-click handling for the shipped binary |
 | [`analyzer/psd.py`](analyzer/psd.py) | Welch PSD in NumPy, so SciPy stays out of the bundle |
 | [`gameplay-analyzer.spec`](gameplay-analyzer.spec) | PyInstaller build spec |
 | [`analyzer/overlay.py`](analyzer/overlay.py) | Crosshair-trace overlay and yaw-vs-time sparkline |

@@ -92,34 +92,19 @@ jobs:
           ./${{ matrix.binary }} profiles | grep -q valorant
           ./${{ matrix.binary }} doctor | grep -q "frozen *True"
 
-      # Windows ships with the drag-and-drop launcher beside the exe. The
-      # launcher looks for the exe in its own folder, so the two must travel
-      # together or it fails with a message about exactly that.
-      - name: Bundle the Windows launcher
-        if: runner.os == 'Windows'
+      # One file per platform. There used to be a .bat launcher beside the
+      # Windows exe, which meant two files that had to stay together -- a
+      # failure mode with no upside, and one that reached a user as "Could not
+      # find gameplay-analyzer.exe" after Windows extracted the launcher alone
+      # from the zip. The exe now handles dropped files itself.
+      - name: Check the download is a single self-sufficient file
         shell: bash
         run: |
-          cp "launchers/Analyze Video.bat" dist/
-          # Assert what the user will actually receive. upload-artifact only
-          # warns when a listed path matches nothing, so a launcher silently
-          # missing from the zip would ship as a working build that cannot
-          # start -- which is exactly how it reached a user once.
-          test -f "dist/gameplay-analyzer.exe" || { echo "exe missing from dist"; exit 1; }
-          test -f "dist/Analyze Video.bat"     || { echo "launcher missing from dist"; exit 1; }
-          echo "Windows download will contain:"
+          test -f "dist/${{ matrix.binary }}" || { echo "binary missing"; exit 1; }
+          test "$(ls dist | wc -l)" -eq 1 || { echo "dist holds more than the binary:"; ls -la dist; exit 1; }
           ls -la dist/
 
-      - if: runner.os == 'Windows'
-        uses: actions/upload-artifact@v4
-        with:
-          name: gameplay-analyzer-${{ matrix.target }}
-          path: |
-            dist/${{ matrix.binary }}
-            dist/Analyze Video.bat
-          retention-days: 30
-
-      - if: runner.os != 'Windows'
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: gameplay-analyzer-${{ matrix.target }}
           path: dist/${{ matrix.binary }}
