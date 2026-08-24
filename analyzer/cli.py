@@ -13,6 +13,10 @@ import json
 import sys
 from pathlib import Path
 
+from .desktop import (
+    WELCOME, hold_window_open, launched_from_file_manager, open_folder,
+    rewrite_dropped_file,
+)
 from .profiles import GameProfile
 from .resources import __version__, runtime_report
 
@@ -50,6 +54,12 @@ def cmd_analyze(args: argparse.Namespace) -> int:
 
     if not args.quiet and records:
         _summarize(records)
+
+    # Someone who dragged a video onto the icon is not going to go hunting for
+    # an output folder they never chose.
+    if args.overlay_dir and launched_from_file_manager():
+        print(f"\n  Results: {args.overlay_dir}", file=sys.stderr)
+        open_folder(args.overlay_dir)
     return 0
 
 
@@ -215,13 +225,45 @@ def build_parser() -> argparse.ArgumentParser:
     return ap
 
 
+KNOWN_COMMANDS = {"analyze", "overlay", "profiles", "doctor", "selftest"}
+
+
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    raw = list(sys.argv[1:] if argv is None else argv)
+    desktop = launched_from_file_manager()
+
+    # Double-clicked with nothing to do: explain, then prove the build works.
+    # An empty command line is not an error here, it is the first thing anyone
+    # tries, and argparse's "the following arguments are required" would be a
+    # useless answer to it.
+    if desktop and not raw:
+        print(WELCOME, file=sys.stderr)
+        code = cmd_selftest(argparse.Namespace())
+        hold_window_open()
+        return code
+
+    # A dropped video arrives as a bare path where a subcommand is expected.
+    dropped = rewrite_dropped_file(raw, KNOWN_COMMANDS)
+    if dropped is not None:
+        raw = dropped
+
     try:
-        return args.func(args)
+        args = build_parser().parse_args(raw)
+    except SystemExit as exc:
+        # argparse exits directly; without this the usage text flashes past.
+        if desktop:
+            hold_window_open()
+        return int(exc.code or 0)
+
+    try:
+        code = args.func(args)
     except KeyboardInterrupt:
         print("\ninterrupted", file=sys.stderr)
-        return 130
+        code = 130
+
+    if desktop:
+        hold_window_open()
+    return code
 
 
 if __name__ == "__main__":
